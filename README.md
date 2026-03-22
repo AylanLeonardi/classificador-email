@@ -27,9 +27,13 @@ Resultado: Improdutivo + resposta de agradecimento
 
 ## Como rodar localmente
 git clone https://github.com/AylanLeonardi/classificador-email.git
+
 cd classificador-email
+
 pip install -r requirements.txt
+
 python app.py
+
 Acesse: http://localhost:5000
 
 ## Autor
