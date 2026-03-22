@@ -1,0 +1,230 @@
+from flask import Flask, request, jsonify, render_template
+import requests
+import re
+import os 
+from dotenv import load_dotenv
+
+# Carrega variáveis de ambiente do arquivo .env
+load_dotenv()
+
+# Inicializa a aplicação Flask
+app = Flask(__name__)
+
+# Configuração da API de inferência do Hugging Face
+API_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-mnli"
+
+# Obtém o token de autenticação das variáveis de ambiente
+HF_TOKEN = os.getenv('HF_TOKEN', '')
+headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+
+def classificar_com_ia(texto):
+    """
+    Classifica o conteúdo do e-mail utilizando modelo de IA do Hugging Face.
+    
+    Args:
+        texto (str): Conteúdo do e-mail a ser classificado
+        
+    Returns:
+        str: "Produtivo" ou "Improdutivo" baseado na classificação da IA
+    """
+    try:
+        # Limita o texto para evitar sobrecarga na API
+        texto_curto = texto[:1000]
+        
+        # Prepara o payload para o modelo de classificação zero-shot
+        payload = {
+            "inputs": texto_curto,
+            "parameters": {
+                "candidate_labels": ["produtivo", "improdutivo"]
+            }
+        }
+        
+        # Realiza a requisição para a API do Hugging Face
+        response = requests.post(API_URL, headers=headers, json=payload)
+        
+        # Processa a resposta se a requisição for bem-sucedida
+        if response.status_code == 200:
+            resultado = response.json()
+            
+            # Extrai a categoria com maior pontuação de confiança
+            categoria_ia = resultado['labels'][0]
+            score = resultado['scores'][0]
+            
+            # Registra o resultado da classificação para debug
+            print(f"🤖 IA classificou como: {categoria_ia} (confiança: {score:.2%})")
+            
+            # Retorna a categoria em português conforme o padrão esperado
+            if categoria_ia == "produtivo":
+                return "Produtivo"
+            else:
+                return "Improdutivo"
+                
+        else:
+            # Em caso de erro na API, utiliza o método de fallback
+            print(f"❌ Erro na API: {response.status_code}")
+            return classificar_fallback(texto)
+            
+    except Exception as e:
+        # Captura e registra exceções durante o processamento
+        print(f"❌ Erro ao chamar IA: {e}")
+        return classificar_fallback(texto)
+
+def classificar_fallback(texto):
+    """
+    Método alternativo de classificação baseado em palavras-chave.
+    Utilizado quando o serviço de IA não está disponível.
+    
+    Args:
+        texto (str): Conteúdo do e-mail a ser classificado
+        
+    Returns:
+        str: "Produtivo" ou "Improdutivo" baseado em análise léxica
+    """
+    texto_lower = texto.lower()
+    
+    # Lista de palavras-chave associadas a e-mails produtivos
+    acao = ['status', 'problema', 'ajuda', 'urgente', 'prazo', 
+            'solicitação', 'aprovado', 'próxima fase', 'case']
+    
+    # Verifica se alguma palavra-chave está presente no texto
+    if any(palavra in texto_lower for palavra in acao):
+        return "Produtivo"
+    return "Improdutivo"
+
+def gerar_resposta_com_ia(texto, categoria):
+    """
+    Gera uma resposta automática baseada na categoria do e-mail.
+    Utiliza modelo GPT-2 quando disponível, caso contrário usa templates predefinidos.
+    
+    Args:
+        texto (str): Conteúdo original do e-mail
+        categoria (str): Categoria classificada ("Produtivo" ou "Improdutivo")
+        
+    Returns:
+        str: Resposta gerada para o remetente
+    """
+    # Tenta gerar resposta com IA para e-mails produtivos
+    if categoria == "Produtivo":
+        try:
+            # Configuração para API de geração de texto
+            gen_url = "https://api-inference.huggingface.co/models/gpt2"
+            payload = {
+                "inputs": f"Responda profissionalmente este email de forma educada e útil: {texto[:300]}",
+                "parameters": {
+                    "max_length": 150,
+                    "temperature": 0.7
+                }
+            }
+            
+            # Realiza requisição para geração de texto
+            response = requests.post(gen_url, headers=headers, json=payload)
+            
+            # Processa a resposta gerada pela IA
+            if response.status_code == 200:
+                resposta_ia = response.json()[0]['generated_text']
+                # Remove o texto de entrada da resposta gerada
+                resposta_ia = resposta_ia.replace(payload["inputs"], "").strip()
+                # Valida se a resposta gerada tem conteúdo significativo
+                if len(resposta_ia) > 20:
+                    return resposta_ia
+        except:
+            # Em caso de falha, utiliza o template padrão
+            pass
+    
+    # Templates predefinidos para diferentes categorias
+    if categoria == "Produtivo":
+        return f"""Olá! Agradecemos pelo seu contato.
+
+✅ Recebemos sua mensagem e nossa equipe de IA já está analisando.
+
+🔍 Retornaremos com uma atualização em até 24 horas.
+
+Atenciosamente,
+Equipe de Suporte"""
+    
+    else:
+        return """Olá! 
+
+😊 Agradecemos pela sua mensagem! 
+
+Estamos à disposição sempre que precisar.
+
+Atenciosamente,
+Equipe de Atendimento"""
+
+@app.route('/')
+def index():
+    """
+    Rota principal da aplicação.
+    Renderiza a interface web para interação com o usuário.
+    
+    Returns:
+        Template HTML renderizado
+    """
+    return render_template('index.html')
+
+@app.route('/classificar', methods=['POST'])
+def processar_email():
+    """
+    Endpoint responsável por processar e classificar e-mails.
+    Aceita tanto texto direto quanto upload de arquivo .txt.
+    
+    Returns:
+        JSON: Resultado da classificação e resposta gerada
+    """
+    try:
+        conteudo = None
+        
+        # Verifica se houve upload de arquivo
+        if 'arquivo' in request.files:
+            arquivo = request.files['arquivo']
+            if arquivo and arquivo.filename:
+                # Valida extensão do arquivo
+                if arquivo.filename.endswith('.txt'):
+                    conteudo = arquivo.read().decode('utf-8')
+                else:
+                    return jsonify({'erro': 'Use arquivo .txt', 'sucesso': False}), 400
+        
+        # Caso não tenha arquivo, obtém texto do formulário
+        if not conteudo:
+            conteudo = request.form.get('texto', '')
+        
+        # Valida se o conteúdo não está vazio
+        if not conteudo or not conteudo.strip():
+            return jsonify({'erro': 'Email vazio', 'sucesso': False}), 400
+        
+        # Registra o e-mail recebido para debug
+        print("\n" + "="*50)
+        print(f"📧 EMAIL RECEBIDO:")
+        print(f"{conteudo[:200]}...")
+        print("="*50)
+        
+        # Realiza a classificação do e-mail
+        categoria = classificar_com_ia(conteudo)
+        
+        # Gera resposta automática baseada na classificação
+        resposta = gerar_resposta_com_ia(conteudo, categoria)
+        
+        # Registra o resultado do processamento
+        print(f"📌 RESULTADO: {categoria}")
+        print("="*50 + "\n")
+        
+        # Retorna o resultado em formato JSON
+        return jsonify({
+            'sucesso': True,
+            'categoria': categoria,
+            'resposta': resposta
+        })
+        
+    except Exception as e:
+        # Trata exceções não previstas
+        print(f"❌ Erro: {e}")
+        return jsonify({'erro': str(e), 'sucesso': False}), 500
+
+if __name__ == '__main__':
+    # Inicialização do servidor
+    print("\n🚀 Servidor com IA iniciando...")
+    print("📍 Acesse: http://localhost:5000")
+    print("🤖 Usando modelo: facebook/bart-large-mnli")
+    # Executa a aplicação em modo debug para desenvolvimento
+    app.run(debug=True, host='0.0.0.0', port=5000)

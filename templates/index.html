@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Classificador Automático de Emails</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        
+        .upload-area {
+            border: 2px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .upload-area:hover {
+            background: #f0f0ff;
+            border-color: #764ba2;
+        }
+        
+        .upload-area input {
+            display: none;
+        }
+        
+        .or-divider {
+            text-align: center;
+            margin: 20px 0;
+            position: relative;
+        }
+        
+        .or-divider::before,
+        .or-divider::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            width: 45%;
+            height: 1px;
+            background: #ddd;
+        }
+        
+        .or-divider::before {
+            left: 0;
+        }
+        
+        .or-divider::after {
+            right: 0;
+        }
+        
+        .or-divider span {
+            background: white;
+            padding: 0 10px;
+            color: #999;
+        }
+        
+        textarea {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: vertical;
+            margin-bottom: 20px;
+        }
+        
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .resultado {
+            margin-top: 30px;
+            padding: 20px;
+            border-radius: 10px;
+            display: none;
+        }
+        
+        .resultado.show {
+            display: block;
+            animation: fadeIn 0.5s;
+        }
+        
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .categoria {
+            font-size: 20px;
+            font-weight: bold;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        
+        .categoria.produtivo {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .categoria.improdutivo {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .resposta {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .resposta h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            display: none;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .erro {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 10px;
+            display: none;
+        }
+        
+        .info {
+            background: #e7f3ff;
+            color: #004085;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 Classificador Automático de Emails</h1>
+            <p>Classifique e gere respostas automaticamente</p>
+        </div>
+        
+        <div class="content">
+            <div class="info">
+                💡 <strong>Dica:</strong> O sistema classifica emails como Produtivo (solicitações, dúvidas, problemas) ou Improdutivo (agradecimentos, felicitações).
+            </div>
+            
+            <div class="upload-area" onclick="document.getElementById('arquivo').click()">
+                <input type="file" id="arquivo" accept=".txt">
+                <div>📁 Clique para selecionar um arquivo .txt</div>
+                <small style="color: #666;">ou cole o texto do email abaixo</small>
+            </div>
+            
+            <div class="or-divider">
+                <span>OU</span>
+            </div>
+            
+            <textarea id="textoEmail" rows="8" placeholder="Cole o conteúdo do email aqui...&#10;&#10;Exemplo:&#10;Olá, gostaria de saber o status da minha solicitação #123. Estou aguardando há 3 dias. Por favor, atualizem o andamento."></textarea>
+            
+            <button onclick="processarEmail()">🚀 Processar Email</button>
+            
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p style="margin-top: 10px;">Processando seu email...</p>
+            </div>
+            
+            <div class="resultado" id="resultado">
+                <div class="categoria" id="categoria"></div>
+                <div class="resposta">
+                    <h3>✉️ Resposta Sugerida</h3>
+                    <div id="resposta"></div>
+                </div>
+            </div>
+            
+            <div class="erro" id="erro"></div>
+        </div>
+    </div>
+    
+    <script>
+        // Obtém referência para a área de upload de arquivos
+        const uploadArea = document.querySelector('.upload-area');
+        
+        // Configura evento para arrastar arquivo sobre a área de upload
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault(); // Previne comportamento padrão do navegador
+            uploadArea.style.background = '#f0f0ff'; // Altera cor de fundo durante arrasto
+        });
+        
+        // Configura evento para quando o arquivo sai da área de upload
+        uploadArea.addEventListener('dragleave', (e) => {
+            uploadArea.style.background = ''; // Restaura cor de fundo original
+        });
+        
+        // Configura evento para soltar arquivo na área de upload
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault(); // Previne comportamento padrão do navegador
+            uploadArea.style.background = ''; // Restaura cor de fundo original
+            const file = e.dataTransfer.files[0]; // Obtém o arquivo solto
+            
+            // Verifica se o arquivo é do tipo .txt
+            if (file && file.name.endsWith('.txt')) {
+                const reader = new FileReader(); // Cria leitor de arquivos
+                reader.onload = function(e) {
+                    // Insere o conteúdo do arquivo no textarea
+                    document.getElementById('textoEmail').value = e.target.result;
+                };
+                reader.readAsText(file); // Lê o arquivo como texto
+            } else {
+                // Exibe alerta se o arquivo não for .txt
+                alert('Por favor, envie apenas arquivos .txt');
+            }
+        });
+        
+        // Configura evento para seleção de arquivo via input
+        document.getElementById('arquivo').addEventListener('change', function(e) {
+            const file = e.target.files[0]; // Obtém o arquivo selecionado
+            
+            // Verifica se o arquivo é do tipo .txt
+            if (file && file.name.endsWith('.txt')) {
+                const reader = new FileReader(); // Cria leitor de arquivos
+                reader.onload = function(e) {
+                    // Insere o conteúdo do arquivo no textarea
+                    document.getElementById('textoEmail').value = e.target.result;
+                };
+                reader.readAsText(file); // Lê o arquivo como texto
+            } else if (file) {
+                // Exibe alerta se o arquivo não for .txt
+                alert('Por favor, selecione apenas arquivos .txt');
+            }
+        });
+        
+        /**
+         * Processa o email enviando para o backend e exibe os resultados
+         * @async
+         */
+        async function processarEmail() {
+            // Obtém os valores dos campos do formulário
+            const texto = document.getElementById('textoEmail').value;
+            const arquivo = document.getElementById('arquivo').files[0];
+            
+            // Valida se há conteúdo para processar
+            if (!texto && !arquivo) {
+                alert('Por favor, insira um email ou faça upload de um arquivo');
+                return;
+            }
+            
+            // Exibe indicador de carregamento e oculta resultados anteriores
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('resultado').classList.remove('show');
+            document.getElementById('erro').style.display = 'none';
+            
+            // Prepara os dados para envio
+            const formData = new FormData();
+            if (arquivo) {
+                formData.append('arquivo', arquivo); // Adiciona arquivo se existir
+            } else {
+                formData.append('texto', texto); // Adiciona texto se não houver arquivo
+            }
+            
+            try {
+                // Realiza requisição para o endpoint de classificação
+                const response = await fetch('/classificar', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json(); // Converte resposta para JSON
+                
+                // Processa resposta de sucesso
+                if (data.sucesso) {
+                    const categoriaDiv = document.getElementById('categoria');
+                    categoriaDiv.textContent = `📌 Categoria: ${data.categoria}`;
+                    categoriaDiv.className = `categoria ${data.categoria.toLowerCase()}`;
+                    
+                    // Exibe a resposta gerada
+                    document.getElementById('resposta').textContent = data.resposta;
+                    document.getElementById('resultado').classList.add('show');
+                } else {
+                    // Exibe mensagem de erro retornada pelo servidor
+                    mostrarErro(data.erro || 'Erro ao processar email');
+                }
+            } catch (error) {
+                // Trata erros de conexão ou rede
+                mostrarErro('Erro de conexão com o servidor');
+            } finally {
+                // Oculta indicador de carregamento independente do resultado
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+        
+        /**
+         * Exibe mensagem de erro temporária na interface
+         * @param {string} mensagem - Texto da mensagem de erro a ser exibida
+         */
+        function mostrarErro(mensagem) {
+            const erroDiv = document.getElementById('erro');
+            erroDiv.textContent = `❌ ${mensagem}`;
+            erroDiv.style.display = 'block';
+            
+            // Oculta a mensagem de erro após 5 segundos
+            setTimeout(() => {
+                erroDiv.style.display = 'none';
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
