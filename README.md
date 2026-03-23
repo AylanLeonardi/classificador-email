@@ -5,7 +5,7 @@ Sistema que classifica emails como Produtivo (precisa de ação) ou Improdutivo 
 
 ## Como Usar
 1. Acesse o link da aplicação
-2. Cole o texto do email ou faça upload de um arquivo .txt
+2. Cole o texto do email ou faça upload de um arquivo .txt ou .PDF
 3. Clique em "Processar Email"
 4. Veja a classificação e a resposta sugerida
 
