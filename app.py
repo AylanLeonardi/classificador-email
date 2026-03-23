@@ -128,61 +128,53 @@ def preprocessar_texto_completo(texto):
     # 6. Juntar tudo
     return ' '.join(palavras_stemizadas)
 
+# Modelo de geração de texto
+gen_url = "https://api-inference.huggingface.co/models/pierreguillou/gpt2-small-portuguese"
+
 def gerar_resposta_com_ia(texto, categoria):
     """
-    Gera uma resposta automática baseada na categoria do e-mail.
-    Utiliza modelo GPT-2 quando disponível, caso contrário usa templates predefinidos.
-    
-    Args:
-        texto (str): Conteúdo original do e-mail
-        categoria (str): Categoria classificada ("Produtivo" ou "Improdutivo")
-        
-    Returns:
-        str: Resposta gerada para o remetente
+    Gera resposta usando IA (ou fallback para template)
     """
-    # Tenta gerar resposta com IA para e-mails produtivos
-    if categoria == "Produtivo":
-        try:
-            # Configuração para API de geração de texto
-            gen_url = "https://api-inference.huggingface.co/models/gpt2"
-            payload = {
-                "inputs": f"Responda profissionalmente este email de forma educada e útil: {texto[:300]}",
-                "parameters": {
-                    "max_length": 150,
-                    "temperature": 0.7
-                }
+    try:
+        # Preparar o prompt baseado na categoria
+        if categoria == "Produtivo":
+            prompt = f"Responda profissionalmente este email de forma educada e útil: {texto[:200]}"
+        else:
+            prompt = f"Responda cordialmente este email de agradecimento: {texto[:150]}"
+        
+        # Chamar a API (usando o mesmo headers com seu token)
+        response = requests.post(gen_url, headers=headers, json={
+            "inputs": prompt,
+            "parameters": {
+                "max_length": 150,
+                "temperature": 0.7,
+                "do_sample": True
             }
+        })
+        
+        # Verificar se funcionou
+        if response.status_code == 200:
+            resultado = response.json()
+            resposta_ia = resultado[0]['generated_text']
+            # Limpar a resposta (remover o prompt)
+            resposta_ia = resposta_ia.replace(prompt, "").strip()
             
-            # Realiza requisição para geração de texto
-            response = requests.post(gen_url, headers=headers, json=payload)
-            
-            # Processa a resposta gerada pela IA
-            if response.status_code == 200:
-                resposta_ia = response.json()[0]['generated_text']
-                # Remove o texto de entrada da resposta gerada
-                resposta_ia = resposta_ia.replace(payload["inputs"], "").strip()
-                # Valida se a resposta gerada tem conteúdo significativo
-                if len(resposta_ia) > 20:
-                    return resposta_ia
-        except:
-            # Em caso de falha, utiliza o template padrão
-            pass
+            if len(resposta_ia) > 20:
+                return resposta_ia
+                
+    except Exception as e:
+        print(f"Erro na geração com IA: {e}")
     
-    # Templates predefinidos para diferentes categorias
+    # FALLBACK: templates fixos (caso a IA falhe)
     if categoria == "Produtivo":
-        return f"""Olá! Agradecemos pelo seu contato.
+        return f"""Olá! Recebemos sua mensagem: "{texto[:100]}..."
 
-✅ Recebemos sua mensagem e nossa equipe de IA já está analisando.
-
-🔍 Retornaremos com uma atualização em até 24 horas.
+✅ Nossa equipe analisará e retornará em até 24 horas.
 
 Atenciosamente,
 Equipe de Suporte"""
-    
     else:
-        return """Olá! 
-
-😊 Agradecemos pela sua mensagem! 
+        return """Olá! Agradecemos pelo seu contato! 😊
 
 Estamos à disposição sempre que precisar.
 
