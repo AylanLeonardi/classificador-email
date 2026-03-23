@@ -64,7 +64,7 @@ def classificar_com_ia(texto):
             score = resultado['scores'][0]
             
             # Registra o resultado da classificação para debug
-            print(f"🤖 IA classificou como: {categoria_ia} (confiança: {score:.2%})")
+            print(f" IA classificou como: {categoria_ia} (confiança: {score:.2%})")
             
             # Retorna a categoria em português conforme o padrão esperado
             if categoria_ia == "produtivo":
@@ -74,12 +74,12 @@ def classificar_com_ia(texto):
                 
         else:
             # Em caso de erro na API, utiliza o método de fallback
-            print(f"❌ Erro na API: {response.status_code}")
+            print(f" Erro na API: {response.status_code}")
             return classificar_fallback(texto)
             
     except Exception as e:
         # Captura e registra exceções durante o processamento
-        print(f"❌ Erro ao chamar IA: {e}")
+        print(f" Erro ao chamar IA: {e}")
         return classificar_fallback(texto)
 
 def classificar_fallback(texto):
@@ -172,9 +172,9 @@ def gerar_resposta_com_ia(texto, categoria):
     if categoria == "Produtivo":
         return f"""Olá! Agradecemos pelo seu contato.
 
-✅ Recebemos sua mensagem e nossa equipe de IA já está analisando.
+ Recebemos sua mensagem e nossa equipe de IA já está analisando.
 
-🔍 Retornaremos com uma atualização em até 24 horas.
+ Retornaremos com uma atualização em até 24 horas.
 
 Atenciosamente,
 Equipe de Suporte"""
@@ -182,7 +182,7 @@ Equipe de Suporte"""
     else:
         return """Olá! 
 
-😊 Agradecemos pela sua mensagem! 
+ Agradecemos pela sua mensagem! 
 
 Estamos à disposição sempre que precisar.
 
@@ -232,7 +232,7 @@ def processar_email():
         
         # Registra o e-mail recebido para debug
         print("\n" + "="*50)
-        print(f"📧 EMAIL RECEBIDO:")
+        print(f" EMAIL RECEBIDO:")
         print(f"{conteudo[:200]}...")
         print("="*50)
         
@@ -243,7 +243,7 @@ def processar_email():
         resposta = gerar_resposta_com_ia(conteudo, categoria)
         
         # Registra o resultado do processamento
-        print(f"📌 RESULTADO: {categoria}")
+        print(f" RESULTADO: {categoria}")
         print("="*50 + "\n")
         
         # Retorna o resultado em formato JSON
@@ -260,8 +260,8 @@ def processar_email():
 
 if __name__ == '__main__':
     # Inicialização do servidor
-    print("\n🚀 Servidor com IA iniciando...")
-    print("📍 Acesse: http://localhost:5000")
-    print("🤖 Usando modelo: facebook/bart-large-mnli")
+    print("\n Servidor com IA iniciando...")
+    print(" Acesse: http://localhost:5000")
+    print(" Usando modelo: facebook/bart-large-mnli")
     # Executa a aplicação em modo debug para desenvolvimento
     app.run(debug=True, host='0.0.0.0', port=5000)
