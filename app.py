@@ -5,7 +5,9 @@ from nltk.corpus import stopwords
 from nltk.stem import RSLPStemmer
 import re
 import os
+import PyPDF2
 from dotenv import load_dotenv
+import io
 
 # Carrega variáveis de ambiente do arquivo .env
 load_dotenv()
@@ -24,48 +26,61 @@ except LookupError:
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')
 DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
 
+def extrair_texto_pdf(arquivo):
+    """
+    Extrai conteúdo textual de um arquivo PDF.
+    
+    Args:
+        arquivo: Objeto de arquivo PDF (FileStorage)
+        
+    Returns:
+        str: Texto extraído do PDF ou string vazia em caso de erro
+    """
+    try:
+        pdf_reader = PyPDF2.PdfReader(arquivo)
+        texto = ""
+        # Itera sobre todas as páginas do PDF
+        for page in pdf_reader.pages:
+            texto += page.extract_text()
+        return texto
+    except Exception as e:
+        print(f"Erro ao ler PDF: {e}")
+        return ""
+
 def preprocessar_texto(texto):
     """
     Aplica técnicas de Processamento de Linguagem Natural ao texto.
     
     Etapas:
-    1. Remove caracteres especiais e mantém apenas letras e espaços
-    2. Converte todo o texto para minúsculas
-    3. Tokeniza e remove stop words (palavras comuns sem significado semântico)
-    4. Aplica stemming para reduzir palavras à sua raiz
-    5. Recompõe o texto processado
+    1. Remove caracteres especiais mantendo apenas letras e espaços
+    2. Converte para minúsculas
+    3. Remove stop words (palavras sem significado semântico)
+    4. Aplica stemming para reduzir palavras à forma base
     
     Args:
         texto (str): Texto original a ser processado
         
     Returns:
-        str: Texto processado com stop words removidas e palavras stemizadas
+        str: Texto processado
     """
     # Remove caracteres especiais, mantém apenas letras acentuadas e espaços
     texto = re.sub(r'[^a-zA-Záéíóúâêôãõç\s]', ' ', texto)
-    
-    # Converte para minúsculas para padronização
+    # Converte para minúsculas
     texto = texto.lower()
-    
-    # Tokeniza o texto em palavras
+    # Tokeniza o texto
     palavras = texto.split()
     
-    # Remove stop words (palavras sem significado semântico)
     try:
+        # Remove stop words
         stop_words = set(stopwords.words('portuguese'))
         palavras_sem_stop = [p for p in palavras if p not in stop_words]
-    except:
-        palavras_sem_stop = palavras
-    
-    # Aplica stemming para reduzir palavras à forma base
-    try:
+        # Aplica stemming
         stemmer = RSLPStemmer()
         palavras_stemizadas = [stemmer.stem(p) for p in palavras_sem_stop]
+        return ' '.join(palavras_stemizadas)
     except:
-        palavras_stemizadas = palavras_sem_stop
-    
-    # Reconstrói o texto processado
-    return ' '.join(palavras_stemizadas)
+        # Retorna texto original caso o processamento falhe
+        return texto
 
 def chamar_deepseek(prompt, max_tokens=200):
     """
@@ -98,7 +113,7 @@ def chamar_deepseek(prompt, max_tokens=200):
         print(f"Erro na API: {response.status_code} - {response.text}")
         return None
 
-def classificar_email(texto_original, texto_processado):
+def classificar_email(texto_original):
     """
     Classifica o e-mail como Produtivo ou Improdutivo.
     
@@ -108,7 +123,6 @@ def classificar_email(texto_original, texto_processado):
     
     Args:
         texto_original (str): Texto original do e-mail
-        texto_processado (str): Texto pré-processado (não utilizado na classificação atual)
         
     Returns:
         str: "Produtivo" ou "Improdutivo"
@@ -127,10 +141,12 @@ def classificar_email(texto_original, texto_processado):
     
     resposta = chamar_deepseek(prompt, max_tokens=10)
     
+    # Processa a resposta da API
     if resposta and "Produtivo" in resposta:
         return "Produtivo"
     elif resposta and "Improdutivo" in resposta:
         return "Improdutivo"
+    # Valor padrão em caso de resposta inválida
     return "Produtivo"
 
 def gerar_resposta(texto_original, categoria):
@@ -144,8 +160,8 @@ def gerar_resposta(texto_original, categoria):
     Returns:
         str: Resposta gerada para o remetente
     """
-    # Aplica pré-processamento para análise de contexto
-    texto_curto = preprocessar_texto(texto_original)
+    # Limita o tamanho do texto para processamento
+    texto_curto = texto_original[:600]
     
     if categoria == "Produtivo":
         prompt = f"""
@@ -154,8 +170,7 @@ def gerar_resposta(texto_original, categoria):
         IMPORTANTE: 
         - Identifique se o email é enviado PARA você (você é o destinatário) ou DE você (você é o remetente)
         - Se o email foi enviado PARA você, agradeça pelo contato e diga que está analisando
-        - Se o email foi enviado DE você, você NÃO precisa responder (é um email que você enviou)
-        - Neste caso, o email é enviado PARA você (Alan é o destinatário)
+        - Se o email foi enviado DE você, você NÃO precisa responder
         - Agradeça pelo contato
         - Confirme que a mensagem foi recebida
         - Diga que a equipe está analisando
@@ -184,7 +199,7 @@ def gerar_resposta(texto_original, categoria):
         resposta = resposta.replace('**', '')
         return resposta.strip()
     
-    # Template alternativo caso a API não retorne resposta válida
+    # Templates alternativos caso a API não retorne resposta válida
     if categoria == "Produtivo":
         return f"""Olá! Agradecemos pelo seu contato.
 
@@ -219,7 +234,7 @@ def index():
 def processar_email():
     """
     Endpoint responsável por processar e classificar e-mails.
-    Aceita texto direto ou upload de arquivo .txt.
+    Aceita texto direto ou upload de arquivos .txt e .pdf.
     
     Returns:
         JSON: Resultado da classificação e resposta gerada
@@ -227,11 +242,17 @@ def processar_email():
     try:
         conteudo = None
         
-        # Verifica se houve upload de arquivo
+        # Processa upload de arquivo, se houver
         if 'arquivo' in request.files:
             arquivo = request.files['arquivo']
-            if arquivo and arquivo.filename and arquivo.filename.endswith('.txt'):
-                conteudo = arquivo.read().decode('utf-8')
+            if arquivo and arquivo.filename:
+                # Verifica extensão do arquivo e extrai conteúdo
+                if arquivo.filename.endswith('.txt'):
+                    conteudo = arquivo.read().decode('utf-8')
+                elif arquivo.filename.endswith('.pdf'):
+                    conteudo = extrair_texto_pdf(arquivo)
+                else:
+                    return jsonify({'erro': 'Formato não suportado. Use .txt ou .pdf', 'sucesso': False}), 400
         
         # Caso não tenha arquivo, obtém texto do formulário
         if not conteudo:
@@ -251,7 +272,7 @@ def processar_email():
         print("="*50)
         
         # Realiza a classificação do e-mail
-        categoria = classificar_email(conteudo, texto_processado)
+        categoria = classificar_email(conteudo)
         
         # Gera resposta automática baseada na classificação
         resposta = gerar_resposta(conteudo, categoria)
@@ -275,7 +296,7 @@ def processar_email():
 
 if __name__ == '__main__':
     # Inicialização do servidor
-    print("\n🚀 Servidor com DeepSeek + NLP iniciando...")
+    print("\n🚀 Servidor com DeepSeek + NLP + PDF iniciando...")
     print("📍 Acesse: http://localhost:5000")
     # Executa a aplicação em modo debug para desenvolvimento
     app.run(debug=True, host='0.0.0.0', port=5000)
