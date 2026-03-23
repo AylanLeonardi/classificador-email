@@ -62,6 +62,12 @@
             display: none;
         }
         
+        .file-info {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #666;
+        }
+        
         .or-divider {
             text-align: center;
             margin: 20px 0;
@@ -223,6 +229,12 @@
             margin-bottom: 20px;
             font-size: 14px;
         }
+        
+        .formatos-aceitos {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
@@ -238,8 +250,10 @@
             </div>
             
             <div class="upload-area" onclick="document.getElementById('arquivo').click()">
-                <input type="file" id="arquivo" accept=".txt">
-                <div>📁 Clique para selecionar um arquivo .txt</div>
+                <input type="file" id="arquivo" accept=".txt,.pdf">
+                <div>📁 Clique para selecionar um arquivo .txt ou .pdf</div>
+                <div class="formatos-aceitos">Formatos aceitos: TXT e PDF</div>
+                <div class="file-info" id="fileInfo"></div>
                 <small style="color: #666;">ou cole o texto do email abaixo</small>
             </div>
             
@@ -269,8 +283,10 @@
     </div>
     
     <script>
-        // Obtém referência para a área de upload de arquivos
+        // Obtém referência para os elementos da interface
         const uploadArea = document.querySelector('.upload-area');
+        const fileInput = document.getElementById('arquivo');
+        const fileInfo = document.getElementById('fileInfo');
         
         // Configura evento para arrastar arquivo sobre a área de upload
         uploadArea.addEventListener('dragover', (e) => {
@@ -289,35 +305,57 @@
             uploadArea.style.background = ''; // Restaura cor de fundo original
             const file = e.dataTransfer.files[0]; // Obtém o arquivo solto
             
-            // Verifica se o arquivo é do tipo .txt
-            if (file && file.name.endsWith('.txt')) {
-                const reader = new FileReader(); // Cria leitor de arquivos
-                reader.onload = function(e) {
-                    // Insere o conteúdo do arquivo no textarea
-                    document.getElementById('textoEmail').value = e.target.result;
-                };
-                reader.readAsText(file); // Lê o arquivo como texto
+            // Verifica se o arquivo é do tipo .txt ou .pdf
+            if (file && (file.name.endsWith('.txt') || file.name.endsWith('.pdf'))) {
+                processarArquivo(file); // Processa o arquivo conforme seu tipo
             } else {
-                // Exibe alerta se o arquivo não for .txt
-                alert('Por favor, envie apenas arquivos .txt');
+                // Exibe alerta se o formato não for suportado
+                alert('Por favor, envie apenas arquivos .txt ou .pdf');
             }
         });
         
+        /**
+         * Processa o arquivo selecionado, extraindo seu conteúdo
+         * @param {File} file - Arquivo a ser processado
+         */
+        function processarArquivo(file) {
+            // Exibe informações do arquivo selecionado
+            fileInfo.textContent = `Arquivo selecionado: ${file.name} (${(file.size / 1024).toFixed(2)} KB)`;
+            fileInfo.style.color = '#28a745';
+            
+            const reader = new FileReader(); // Cria leitor de arquivos
+            
+            reader.onload = function(e) {
+                // Para arquivos PDF, o conteúdo é binário e será enviado diretamente
+                // Para TXT, o conteúdo é texto e será inserido no textarea
+                if (file.name.endsWith('.txt')) {
+                    document.getElementById('textoEmail').value = e.target.result;
+                }
+                // Para PDF, não inserimos no textarea pois será enviado como arquivo
+            };
+            
+            // Para arquivos TXT, lê como texto
+            if (file.name.endsWith('.txt')) {
+                reader.readAsText(file);
+            }
+        }
+        
         // Configura evento para seleção de arquivo via input
-        document.getElementById('arquivo').addEventListener('change', function(e) {
+        fileInput.addEventListener('change', function(e) {
             const file = e.target.files[0]; // Obtém o arquivo selecionado
             
-            // Verifica se o arquivo é do tipo .txt
-            if (file && file.name.endsWith('.txt')) {
-                const reader = new FileReader(); // Cria leitor de arquivos
-                reader.onload = function(e) {
-                    // Insere o conteúdo do arquivo no textarea
-                    document.getElementById('textoEmail').value = e.target.result;
-                };
-                reader.readAsText(file); // Lê o arquivo como texto
-            } else if (file) {
-                // Exibe alerta se o arquivo não for .txt
-                alert('Por favor, selecione apenas arquivos .txt');
+            if (file) {
+                // Verifica se o formato é suportado
+                if (file.name.endsWith('.txt') || file.name.endsWith('.pdf')) {
+                    processarArquivo(file); // Processa o arquivo conforme seu tipo
+                } else {
+                    // Exibe alerta se o formato não for suportado
+                    alert('Por favor, selecione apenas arquivos .txt ou .pdf');
+                    fileInput.value = ''; // Limpa o input
+                    fileInfo.textContent = ''; // Limpa informações do arquivo
+                }
+            } else {
+                fileInfo.textContent = ''; // Limpa informações quando nenhum arquivo é selecionado
             }
         });
         
@@ -367,6 +405,10 @@
                     // Exibe a resposta gerada
                     document.getElementById('resposta').textContent = data.resposta;
                     document.getElementById('resultado').classList.add('show');
+                    
+                    // Limpa o campo de arquivo após processamento bem-sucedido
+                    document.getElementById('arquivo').value = '';
+                    document.getElementById('fileInfo').textContent = '';
                 } else {
                     // Exibe mensagem de erro retornada pelo servidor
                     mostrarErro(data.erro || 'Erro ao processar email');
