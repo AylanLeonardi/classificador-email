@@ -7,56 +7,77 @@ import re
 import os
 from dotenv import load_dotenv
 
+# Carrega variáveis de ambiente do arquivo .env
 load_dotenv()
 
+# Inicializa a aplicação Flask
 app = Flask(__name__)
 
-# Baixar recursos do NLTK (primeira vez)
+# Verifica e baixa recursos necessários do NLTK
 try:
     nltk.data.find('tokenizers/punkt')
 except LookupError:
     nltk.download('stopwords')
     nltk.download('rslp')
 
-# DeepSeek API
+# Configuração da API DeepSeek
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')
 DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
 
 def preprocessar_texto(texto):
     """
-    Pré-processamento completo com NLP:
-    - Remove caracteres especiais
-    - Converte para minúsculas
-    - Remove stop words
-    - Aplica stemming
+    Aplica técnicas de Processamento de Linguagem Natural ao texto.
+    
+    Etapas:
+    1. Remove caracteres especiais e mantém apenas letras e espaços
+    2. Converte todo o texto para minúsculas
+    3. Tokeniza e remove stop words (palavras comuns sem significado semântico)
+    4. Aplica stemming para reduzir palavras à sua raiz
+    5. Recompõe o texto processado
+    
+    Args:
+        texto (str): Texto original a ser processado
+        
+    Returns:
+        str: Texto processado com stop words removidas e palavras stemizadas
     """
-    # 1. Remover caracteres especiais
+    # Remove caracteres especiais, mantém apenas letras acentuadas e espaços
     texto = re.sub(r'[^a-zA-Záéíóúâêôãõç\s]', ' ', texto)
     
-    # 2. Converter para minúsculas
+    # Converte para minúsculas para padronização
     texto = texto.lower()
     
-    # 3. Separar em palavras
+    # Tokeniza o texto em palavras
     palavras = texto.split()
     
-    # 4. Remover stop words
+    # Remove stop words (palavras sem significado semântico)
     try:
         stop_words = set(stopwords.words('portuguese'))
         palavras_sem_stop = [p for p in palavras if p not in stop_words]
     except:
         palavras_sem_stop = palavras
     
-    # 5. Aplicar stemming
+    # Aplica stemming para reduzir palavras à forma base
     try:
         stemmer = RSLPStemmer()
         palavras_stemizadas = [stemmer.stem(p) for p in palavras_sem_stop]
     except:
         palavras_stemizadas = palavras_sem_stop
     
-    # 6. Juntar tudo
+    # Reconstrói o texto processado
     return ' '.join(palavras_stemizadas)
 
 def chamar_deepseek(prompt, max_tokens=200):
+    """
+    Realiza chamada para a API DeepSeek.
+    
+    Args:
+        prompt (str): Instrução ou texto para processamento
+        max_tokens (int): Número máximo de tokens na resposta
+        
+    Returns:
+        str: Resposta gerada pela API ou None em caso de erro
+    """
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json"
@@ -74,13 +95,23 @@ def chamar_deepseek(prompt, max_tokens=200):
     if response.status_code == 200:
         return response.json()['choices'][0]['message']['content']
     else:
-        print(f"Erro: {response.status_code} - {response.text}")
+        print(f"Erro na API: {response.status_code} - {response.text}")
         return None
 
 def classificar_email(texto_original, texto_processado):
     """
-    Classifica email usando DeepSeek
-    Usa texto original para contexto (IA entende melhor)
+    Classifica o e-mail como Produtivo ou Improdutivo.
+    
+    Critérios:
+    - Produtivo: Requer ação, resposta, confirmação ou possui prazo
+    - Improdutivo: Agradecimentos, felicitações ou mensagens sem necessidade de resposta
+    
+    Args:
+        texto_original (str): Texto original do e-mail
+        texto_processado (str): Texto pré-processado (não utilizado na classificação atual)
+        
+    Returns:
+        str: "Produtivo" ou "Improdutivo"
     """
     prompt = f"""
     Classifique o email abaixo como "Produtivo" ou "Improdutivo".
@@ -103,8 +134,17 @@ def classificar_email(texto_original, texto_processado):
     return "Produtivo"
 
 def gerar_resposta(texto_original, categoria):
-    """Gera resposta personalizada baseada no contexto"""
+    """
+    Gera resposta automática baseada na categoria do e-mail.
     
+    Args:
+        texto_original (str): Texto original do e-mail
+        categoria (str): Categoria classificada ("Produtivo" ou "Improdutivo")
+        
+    Returns:
+        str: Resposta gerada para o remetente
+    """
+    # Aplica pré-processamento para análise de contexto
     texto_curto = preprocessar_texto(texto_original)
     
     if categoria == "Produtivo":
@@ -139,11 +179,12 @@ def gerar_resposta(texto_original, categoria):
     
     resposta = chamar_deepseek(prompt, max_tokens=150)
     
+    # Valida e limpa a resposta gerada
     if resposta and len(resposta) > 20:
         resposta = resposta.replace('**', '')
         return resposta.strip()
     
-    # Fallback
+    # Template alternativo caso a API não retorne resposta válida
     if categoria == "Produtivo":
         return f"""Olá! Agradecemos pelo seu contato.
 
@@ -165,42 +206,62 @@ Equipe de Atendimento"""
 
 @app.route('/')
 def index():
+    """
+    Rota principal da aplicação.
+    Renderiza a interface web para interação com o usuário.
+    
+    Returns:
+        Template HTML renderizado
+    """
     return render_template('index.html')
 
 @app.route('/classificar', methods=['POST'])
 def processar_email():
+    """
+    Endpoint responsável por processar e classificar e-mails.
+    Aceita texto direto ou upload de arquivo .txt.
+    
+    Returns:
+        JSON: Resultado da classificação e resposta gerada
+    """
     try:
         conteudo = None
         
+        # Verifica se houve upload de arquivo
         if 'arquivo' in request.files:
             arquivo = request.files['arquivo']
             if arquivo and arquivo.filename and arquivo.filename.endswith('.txt'):
                 conteudo = arquivo.read().decode('utf-8')
         
+        # Caso não tenha arquivo, obtém texto do formulário
         if not conteudo:
             conteudo = request.form.get('texto', '')
         
+        # Valida se o conteúdo não está vazio
         if not conteudo or not conteudo.strip():
             return jsonify({'erro': 'Email vazio', 'sucesso': False}), 400
         
+        # Registra o e-mail recebido para debug
         print("\n" + "="*50)
         print(f"📧 EMAIL ORIGINAL: {conteudo[:100]}...")
         
-        # Aplicar pré-processamento
+        # Aplica pré-processamento NLP ao texto
         texto_processado = preprocessar_texto(conteudo)
         print(f"🔧 APÓS NLP: {texto_processado[:100]}...")
         print("="*50)
         
-        # Classificar
+        # Realiza a classificação do e-mail
         categoria = classificar_email(conteudo, texto_processado)
         
-        # Gerar resposta
+        # Gera resposta automática baseada na classificação
         resposta = gerar_resposta(conteudo, categoria)
         
+        # Registra o resultado do processamento
         print(f"📌 RESULTADO: {categoria}")
         print(f"💬 RESPOSTA: {resposta[:100]}...")
         print("="*50 + "\n")
         
+        # Retorna o resultado em formato JSON
         return jsonify({
             'sucesso': True,
             'categoria': categoria,
@@ -208,10 +269,13 @@ def processar_email():
         })
         
     except Exception as e:
+        # Trata exceções não previstas
         print(f"❌ Erro: {e}")
         return jsonify({'erro': str(e), 'sucesso': False}), 500
 
 if __name__ == '__main__':
+    # Inicialização do servidor
     print("\n🚀 Servidor com DeepSeek + NLP iniciando...")
     print("📍 Acesse: http://localhost:5000")
+    # Executa a aplicação em modo debug para desenvolvimento
     app.run(debug=True, host='0.0.0.0', port=5000)
