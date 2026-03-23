@@ -21,7 +21,7 @@ Resultado: Improdutivo + resposta de agradecimento
 
 ## Tecnologias
 - Python + Flask
-- Hugging Face API (IA)
+- DeepSeek API (IA)
 - HTML/CSS/JavaScript
 - Render (hospedagem)
 
