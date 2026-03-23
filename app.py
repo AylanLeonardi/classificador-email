@@ -1,112 +1,34 @@
 from flask import Flask, request, jsonify, render_template
 import requests
-import re
-import os 
 import nltk
 from nltk.corpus import stopwords
 from nltk.stem import RSLPStemmer
+import re
+import os
 from dotenv import load_dotenv
 
-# Carrega variáveis de ambiente do arquivo .env
 load_dotenv()
 
-# Baixar recursos do NLTK (executa apenas na primeira vez)
+app = Flask(__name__)
+
+# Baixar recursos do NLTK (primeira vez)
 try:
     nltk.data.find('tokenizers/punkt')
 except LookupError:
     nltk.download('stopwords')
     nltk.download('rslp')
 
-# Inicializa a aplicação Flask
-app = Flask(__name__)
+# DeepSeek API
+DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')
+DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
 
-# Configuração da API de inferência do Hugging Face
-API_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-mnli"
-
-# Obtém o token de autenticação das variáveis de ambiente
-HF_TOKEN = os.getenv('HF_TOKEN', '')
-headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-
-def classificar_com_ia(texto):
+def preprocessar_texto(texto):
     """
-    Classifica o conteúdo do e-mail utilizando modelo de IA do Hugging Face.
-    
-    Args:
-        texto (str): Conteúdo do e-mail a ser classificado
-        
-    Returns:
-        str: "Produtivo" ou "Improdutivo" baseado na classificação da IA
-    """
-    try:
-        # Aplicar pré-processamento
-        texto_processado = preprocessar_texto_completo(texto)
-        
-        # Usar texto processado na API
-        texto_curto = texto_processado[:1000]
-        
-        # Prepara o payload para o modelo de classificação zero-shot
-        payload = {
-            "inputs": texto_curto,
-            "parameters": {
-                "candidate_labels": ["produtivo", "improdutivo"]
-            }
-        }
-        
-        # Realiza a requisição para a API do Hugging Face
-        response = requests.post(API_URL, headers=headers, json=payload)
-        
-        # Processa a resposta se a requisição for bem-sucedida
-        if response.status_code == 200:
-            resultado = response.json()
-            
-            # Extrai a categoria com maior pontuação de confiança
-            categoria_ia = resultado['labels'][0]
-            score = resultado['scores'][0]
-            
-            # Registra o resultado da classificação para debug
-            print(f"🤖 IA classificou como: {categoria_ia} (confiança: {score:.2%})")
-            
-            # Retorna a categoria em português conforme o padrão esperado
-            if categoria_ia == "produtivo":
-                return "Produtivo"
-            else:
-                return "Improdutivo"
-                
-        else:
-            # Em caso de erro na API, utiliza o método de fallback
-            print(f"❌ Erro na API: {response.status_code}")
-            return classificar_fallback(texto)
-            
-    except Exception as e:
-        # Captura e registra exceções durante o processamento
-        print(f"❌ Erro ao chamar IA: {e}")
-        return classificar_fallback(texto)
-
-def classificar_fallback(texto):
-    """
-    Método alternativo de classificação baseado em palavras-chave.
-    Utilizado quando o serviço de IA não está disponível.
-    
-    Args:
-        texto (str): Conteúdo do e-mail a ser classificado
-        
-    Returns:
-        str: "Produtivo" ou "Improdutivo" baseado em análise léxica
-    """
-    texto_lower = texto.lower()
-    
-    # Lista de palavras-chave associadas a e-mails produtivos
-    acao = ['status', 'problema', 'ajuda', 'urgente', 'prazo', 
-            'solicitação', 'aprovado', 'próxima fase', 'case']
-    
-    # Verifica se alguma palavra-chave está presente no texto
-    if any(palavra in texto_lower for palavra in acao):
-        return "Produtivo"
-    return "Improdutivo"
-
-def preprocessar_texto_completo(texto):
-    """
-    Pré-processamento completo com NLP
+    Pré-processamento completo com NLP:
+    - Remove caracteres especiais
+    - Converte para minúsculas
+    - Remove stop words
+    - Aplica stemming
     """
     # 1. Remover caracteres especiais
     texto = re.sub(r'[^a-zA-Záéíóúâêôãõç\s]', ' ', texto)
@@ -118,127 +40,167 @@ def preprocessar_texto_completo(texto):
     palavras = texto.split()
     
     # 4. Remover stop words
-    stop_words = set(stopwords.words('portuguese'))
-    palavras_sem_stop = [p for p in palavras if p not in stop_words]
+    try:
+        stop_words = set(stopwords.words('portuguese'))
+        palavras_sem_stop = [p for p in palavras if p not in stop_words]
+    except:
+        palavras_sem_stop = palavras
     
     # 5. Aplicar stemming
-    stemmer = RSLPStemmer()
-    palavras_stemizadas = [stemmer.stem(p) for p in palavras_sem_stop]
+    try:
+        stemmer = RSLPStemmer()
+        palavras_stemizadas = [stemmer.stem(p) for p in palavras_sem_stop]
+    except:
+        palavras_stemizadas = palavras_sem_stop
     
     # 6. Juntar tudo
     return ' '.join(palavras_stemizadas)
 
-# Modelo de geração de texto
-gen_url = "https://api-inference.huggingface.co/models/pierreguillou/gpt2-small-portuguese"
-
-def gerar_resposta_com_ia(texto, categoria):
-    """
-    Gera resposta usando IA (ou fallback para template)
-    """
-    try:
-        # Preparar o prompt baseado na categoria
-        if categoria == "Produtivo":
-            prompt = f"Responda profissionalmente este email de forma educada e útil: {texto[:200]}"
-        else:
-            prompt = f"Responda cordialmente este email de agradecimento: {texto[:150]}"
-        
-        # Chamar a API (usando o mesmo headers com seu token)
-        response = requests.post(gen_url, headers=headers, json={
-            "inputs": prompt,
-            "parameters": {
-                "max_length": 150,
-                "temperature": 0.7,
-                "do_sample": True
-            }
-        })
-        
-        # Verificar se funcionou
-        if response.status_code == 200:
-            resultado = response.json()
-            resposta_ia = resultado[0]['generated_text']
-            # Limpar a resposta (remover o prompt)
-            resposta_ia = resposta_ia.replace(prompt, "").strip()
-            
-            if len(resposta_ia) > 20:
-                return resposta_ia
-                
-    except Exception as e:
-        print(f"Erro na geração com IA: {e}")
+def chamar_deepseek(prompt, max_tokens=200):
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json"
+    }
     
-    # FALLBACK: templates fixos (caso a IA falhe)
-    if categoria == "Produtivo":
-        return f"""Olá! Recebemos sua mensagem: "{texto[:100]}..."
+    data = {
+        "model": "deepseek-chat",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7,
+        "max_tokens": max_tokens
+    }
+    
+    response = requests.post(DEEPSEEK_URL, headers=headers, json=data)
+    
+    if response.status_code == 200:
+        return response.json()['choices'][0]['message']['content']
+    else:
+        print(f"Erro: {response.status_code} - {response.text}")
+        return None
 
-✅ Nossa equipe analisará e retornará em até 24 horas.
+def classificar_email(texto_original, texto_processado):
+    """
+    Classifica email usando DeepSeek
+    Usa texto original para contexto (IA entende melhor)
+    """
+    prompt = f"""
+    Classifique o email abaixo como "Produtivo" ou "Improdutivo".
+    
+    - Produtivo: emails que exigem uma ação, resposta, confirmação, envio de informações, ou têm prazo.
+    - Improdutivo: emails de agradecimento, felicitações, mensagens sem necessidade de resposta.
+    
+    Email:
+    {texto_original[:800]}
+    
+    Responda APENAS com uma das palavras: Produtivo ou Improdutivo
+    """
+    
+    resposta = chamar_deepseek(prompt, max_tokens=10)
+    
+    if resposta and "Produtivo" in resposta:
+        return "Produtivo"
+    elif resposta and "Improdutivo" in resposta:
+        return "Improdutivo"
+    return "Produtivo"
+
+def gerar_resposta(texto_original, categoria):
+    """Gera resposta personalizada baseada no contexto"""
+    
+    texto_curto = preprocessar_texto(texto_original)
+    
+    if categoria == "Produtivo":
+        prompt = f"""
+        Você é um assistente de suporte profissional. Analise o email abaixo e gere uma resposta APROPRIADA.
+        
+        IMPORTANTE: 
+        - Identifique se o email é enviado PARA você (você é o destinatário) ou DE você (você é o remetente)
+        - Se o email foi enviado PARA você, agradeça pelo contato e diga que está analisando
+        - Se o email foi enviado DE você, você NÃO precisa responder (é um email que você enviou)
+        - Neste caso, o email é enviado PARA você (Alan é o destinatário)
+        - Agradeça pelo contato
+        - Confirme que a mensagem foi recebida
+        - Diga que a equipe está analisando
+        - Mencione o prazo de retorno (24h)
+        - Seja cordial, mas profissional
+        - NÃO invente informações
+        
+        Email recebido:
+        {texto_curto}
+        
+        Gere uma resposta profissional:
+        """
+    else:
+        prompt = f"""
+        Você é um assistente de suporte profissional. Gere uma resposta cordial.
+        
+        Email: {texto_curto}
+        
+        Resposta:
+        """
+    
+    resposta = chamar_deepseek(prompt, max_tokens=150)
+    
+    if resposta and len(resposta) > 20:
+        resposta = resposta.replace('**', '')
+        return resposta.strip()
+    
+    # Fallback
+    if categoria == "Produtivo":
+        return f"""Olá! Agradecemos pelo seu contato.
+
+✅ Recebemos sua mensagem e nossa equipe já está analisando.
+
+🔍 Retornaremos em até 24 horas.
 
 Atenciosamente,
 Equipe de Suporte"""
     else:
-        return """Olá! Agradecemos pelo seu contato! 😊
+        return """Olá! 
 
-Estamos à disposição sempre que precisar.
+😊 Agradecemos pela sua mensagem!
+
+Estamos à disposição.
 
 Atenciosamente,
 Equipe de Atendimento"""
 
 @app.route('/')
 def index():
-    """
-    Rota principal da aplicação.
-    Renderiza a interface web para interação com o usuário.
-    
-    Returns:
-        Template HTML renderizado
-    """
     return render_template('index.html')
 
 @app.route('/classificar', methods=['POST'])
 def processar_email():
-    """
-    Endpoint responsável por processar e classificar e-mails.
-    Aceita tanto texto direto quanto upload de arquivo .txt.
-    
-    Returns:
-        JSON: Resultado da classificação e resposta gerada
-    """
     try:
         conteudo = None
         
-        # Verifica se houve upload de arquivo
         if 'arquivo' in request.files:
             arquivo = request.files['arquivo']
-            if arquivo and arquivo.filename:
-                # Valida extensão do arquivo
-                if arquivo.filename.endswith('.txt'):
-                    conteudo = arquivo.read().decode('utf-8')
-                else:
-                    return jsonify({'erro': 'Use arquivo .txt', 'sucesso': False}), 400
+            if arquivo and arquivo.filename and arquivo.filename.endswith('.txt'):
+                conteudo = arquivo.read().decode('utf-8')
         
-        # Caso não tenha arquivo, obtém texto do formulário
         if not conteudo:
             conteudo = request.form.get('texto', '')
         
-        # Valida se o conteúdo não está vazio
         if not conteudo or not conteudo.strip():
             return jsonify({'erro': 'Email vazio', 'sucesso': False}), 400
         
-        # Registra o e-mail recebido para debug
         print("\n" + "="*50)
-        print(f"📧 EMAIL RECEBIDO:")
-        print(f"{conteudo[:200]}...")
+        print(f"📧 EMAIL ORIGINAL: {conteudo[:100]}...")
+        
+        # Aplicar pré-processamento
+        texto_processado = preprocessar_texto(conteudo)
+        print(f"🔧 APÓS NLP: {texto_processado[:100]}...")
         print("="*50)
         
-        # Realiza a classificação do e-mail
-        categoria = classificar_com_ia(conteudo)
+        # Classificar
+        categoria = classificar_email(conteudo, texto_processado)
         
-        # Gera resposta automática baseada na classificação
-        resposta = gerar_resposta_com_ia(conteudo, categoria)
+        # Gerar resposta
+        resposta = gerar_resposta(conteudo, categoria)
         
-        # Registra o resultado do processamento
         print(f"📌 RESULTADO: {categoria}")
+        print(f"💬 RESPOSTA: {resposta[:100]}...")
         print("="*50 + "\n")
         
-        # Retorna o resultado em formato JSON
         return jsonify({
             'sucesso': True,
             'categoria': categoria,
@@ -246,14 +208,10 @@ def processar_email():
         })
         
     except Exception as e:
-        # Trata exceções não previstas
         print(f"❌ Erro: {e}")
         return jsonify({'erro': str(e), 'sucesso': False}), 500
 
 if __name__ == '__main__':
-    # Inicialização do servidor
-    print("\n🚀 Servidor com IA iniciando...")
+    print("\n🚀 Servidor com DeepSeek + NLP iniciando...")
     print("📍 Acesse: http://localhost:5000")
-    print("🤖 Usando modelo: facebook/bart-large-mnli")
-    # Executa a aplicação em modo debug para desenvolvimento
     app.run(debug=True, host='0.0.0.0', port=5000)
