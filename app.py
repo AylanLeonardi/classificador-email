@@ -2,10 +2,20 @@ from flask import Flask, request, jsonify, render_template
 import requests
 import re
 import os 
+import nltk
+from nltk.corpus import stopwords
+from nltk.stem import RSLPStemmer
 from dotenv import load_dotenv
 
 # Carrega variáveis de ambiente do arquivo .env
 load_dotenv()
+
+# Baixar recursos do NLTK (executa apenas na primeira vez)
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('stopwords')
+    nltk.download('rslp')
 
 # Inicializa a aplicação Flask
 app = Flask(__name__)
@@ -28,8 +38,11 @@ def classificar_com_ia(texto):
         str: "Produtivo" ou "Improdutivo" baseado na classificação da IA
     """
     try:
-        # Limita o texto para evitar sobrecarga na API
-        texto_curto = texto[:1000]
+        # Aplicar pré-processamento
+        texto_processado = preprocessar_texto_completo(texto)
+        
+        # Usar texto processado na API
+        texto_curto = texto_processado[:1000]
         
         # Prepara o payload para o modelo de classificação zero-shot
         payload = {
@@ -90,6 +103,30 @@ def classificar_fallback(texto):
     if any(palavra in texto_lower for palavra in acao):
         return "Produtivo"
     return "Improdutivo"
+
+def preprocessar_texto_completo(texto):
+    """
+    Pré-processamento completo com NLP
+    """
+    # 1. Remover caracteres especiais
+    texto = re.sub(r'[^a-zA-Záéíóúâêôãõç\s]', ' ', texto)
+    
+    # 2. Converter para minúsculas
+    texto = texto.lower()
+    
+    # 3. Separar em palavras
+    palavras = texto.split()
+    
+    # 4. Remover stop words
+    stop_words = set(stopwords.words('portuguese'))
+    palavras_sem_stop = [p for p in palavras if p not in stop_words]
+    
+    # 5. Aplicar stemming
+    stemmer = RSLPStemmer()
+    palavras_stemizadas = [stemmer.stem(p) for p in palavras_sem_stop]
+    
+    # 6. Juntar tudo
+    return ' '.join(palavras_stemizadas)
 
 def gerar_resposta_com_ia(texto, categoria):
     """
